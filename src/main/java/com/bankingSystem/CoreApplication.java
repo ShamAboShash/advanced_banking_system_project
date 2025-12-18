@@ -17,7 +17,16 @@ public class CoreApplication {
     private static UserDAO userDAO = new UserDAO();
     private static TransactionDAO transactionDAO = new TransactionDAO();
 
+
     public static void main(String[] args) {
+        transactionService.registerObserver(new com.bankingSystem.Notification.EmailNotifier(com.bankingSystem.user.Role.CUSTOMER));
+        transactionService.registerObserver(new com.bankingSystem.Notification.SMSNotifier(com.bankingSystem.user.Role.CUSTOMER));
+        transactionService.registerObserver(new com.bankingSystem.Notification.InAppNotifier(com.bankingSystem.user.Role.CUSTOMER));
+
+        transactionService.registerObserver(new com.bankingSystem.Notification.EmailNotifier(com.bankingSystem.user.Role.MANAGER));
+        transactionService.registerObserver(new com.bankingSystem.Notification.SMSNotifier(com.bankingSystem.user.Role.MANAGER));
+        transactionService.registerObserver(new com.bankingSystem.Notification.InAppNotifier(com.bankingSystem.user.Role.MANAGER));
+
         System.out.println("=== Advanced Banking System Demo ===\n");
         System.out.println("Phase 1: Creating Users (Customer, Teller, Manager)\n");
 
@@ -79,6 +88,25 @@ public class CoreApplication {
         System.out.println("\nCurrent balances (money not moved yet):");
         savings.showDetails();
         checking.showDetails();
+
+        // ===================================================================
+
+        System.out.println("\n=== TEST: Manager Rejects Large Transaction ===");
+
+        List<Transaction> pendingReject = transactionDAO.loadPendingTransactions();
+        if (!pendingReject.isEmpty()) {
+            Transaction txToReject = pendingReject.get(0);
+
+            System.out.println("Rejecting transaction:");
+            System.out.println("  → " + txToReject);
+
+            Manager mgr = (Manager) userDAO.loadUser("mgr_khaled");
+            mgr.rejectTransaction(txToReject.getTransactionId());
+
+            System.out.println("Balances after rejection (should be unchanged):");
+            reloadAndShowAccount(savings);
+            reloadAndShowAccount(checking);
+        }
 
         // ===================================================================
         System.out.println("\nPhase 5: Manager Approves Large Transaction\n");
