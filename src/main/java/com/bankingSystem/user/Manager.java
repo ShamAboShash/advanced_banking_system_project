@@ -6,6 +6,7 @@ import com.bankingSystem.Transaction.Transaction;
 import com.bankingSystem.Transaction.TransactionService;
 
 public class Manager extends User {
+
     public Manager(String username, String password) {
         super(username, password, Role.MANAGER);
     }
@@ -25,9 +26,10 @@ public class Manager extends User {
 
         txDAO.updateTransactionStatus(transactionId, "APPROVED_BY_MANAGER");
 
-        TransactionService service = new TransactionService();
-        service.notifyManagerDecision(tx, true);            // ✅ إشعار Approved
-        service.executeApprovedTransaction(transactionId);  // ✅ التنفيذ
+        // ✅ نفس instance
+        TransactionService service = TransactionService.getInstance();
+        service.notifyManagerDecision(tx, true);
+        service.executeApprovedTransaction(transactionId);
 
         System.out.println("Manager " + username + " approved and executed transaction " + transactionId);
     }
@@ -43,8 +45,9 @@ public class Manager extends User {
 
         txDAO.updateTransactionStatus(transactionId, "REJECTED_BY_MANAGER");
 
-        TransactionService service = new TransactionService();
-        service.notifyManagerDecision(tx, false); // ✅ إشعار Rejected
+        // ✅ نفس instance
+        TransactionService service = TransactionService.getInstance();
+        service.notifyManagerDecision(tx, false);
 
         System.out.println("Manager " + username + " rejected transaction " + transactionId);
     }

@@ -1,4 +1,3 @@
-// src/main/java/com/bankingSystem/Transaction/TransactionService.java
 package com.bankingSystem.Transaction;
 
 import com.bankingSystem.Account.Account;
@@ -13,13 +12,21 @@ import java.util.List;
 
 public class TransactionService implements Subject {
 
+    // ✅ Singleton
+    private static final TransactionService INSTANCE = new TransactionService();
+
+    public static TransactionService getInstance() {
+        return INSTANCE;
+    }
+
     private ApprovalHandler approvalChain;
     private final TransactionDAO transactionDAO = new TransactionDAO();
     private final AccountDAO accountDAO = new AccountDAO();
 
     private final List<Observer> observers = new ArrayList<>();
 
-    public TransactionService() {
+    // ✅ constructor صار private
+    private TransactionService() {
         buildApprovalChain();
     }
 
@@ -33,7 +40,6 @@ public class TransactionService implements Subject {
         approvalChain = small;
     }
 
-    // ===== Subject methods =====
     @Override
     public void registerObserver(Observer observer) {
         observers.add(observer);

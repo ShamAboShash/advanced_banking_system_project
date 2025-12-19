@@ -12,7 +12,7 @@ import java.util.List;
 
 public class CoreApplication {
 
-    private static TransactionService transactionService = new TransactionService();
+    private static TransactionService transactionService = TransactionService.getInstance();
     private static AccountDAO accountDAO = new AccountDAO();
     private static UserDAO userDAO = new UserDAO();
     private static TransactionDAO transactionDAO = new TransactionDAO();
