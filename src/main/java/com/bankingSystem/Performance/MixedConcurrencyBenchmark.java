@@ -15,10 +15,10 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class MixedConcurrencyBenchmark {
 
     // ===== Config =====
-    private static final int ACCOUNTS = 10;
+    private static final int ACCOUNTS = 100;
 
     private static final int WARMUP_TASKS = 1_000;
-    private static final int MEASURE_TASKS = 10_000;
+    private static final int MEASURE_TASKS = 5000;
 
     // amounts صغيرة لتجنب manager approval
     private static final int AMOUNT_MIN = 50;
@@ -51,8 +51,8 @@ public class MixedConcurrencyBenchmark {
         Result r1 = runScenario("MEASURE (1 thread)", service, accountDAO, accounts, 1, MEASURE_TASKS, true);
 
         // ===== Run 2: Concurrent load =====
-        runScenario("WARMUP (100 threads)", service, accountDAO, accounts, 200, WARMUP_TASKS, false);
-        Result r100 = runScenario("MEASURE (100 threads)", service, accountDAO, accounts, 200, MEASURE_TASKS, true);
+        runScenario("WARMUP (200 threads)", service, accountDAO, accounts, 200, WARMUP_TASKS, false);
+        Result r100 = runScenario("MEASURE (200 threads)", service, accountDAO, accounts, 200, MEASURE_TASKS, true);
 
         // ===== Query speed benchmark (Account inquiry only) =====
         querySpeedBenchmark(accountDAO, accounts, 500);
@@ -60,11 +60,11 @@ public class MixedConcurrencyBenchmark {
         // ===== Summary comparison =====
         System.out.println("\n=== SUMMARY COMPARISON ===");
         System.out.printf("Throughput 1-thread : %.2f ops/sec%n", r1.throughputOps);
-        System.out.printf("Throughput 100-threads: %.2f ops/sec%n", r100.throughputOps);
+        System.out.printf("Throughput 200-threads: %.2f ops/sec%n", r100.throughputOps);
         System.out.printf("p95 latency 1-thread : %d ms%n", r1.p95Ms);
         System.out.printf("p95 latency 100-threads: %d ms%n", r100.p95Ms);
-        System.out.printf("Failures 1-thread=%d | 100-threads=%d%n", r1.failures, r100.failures);
-        System.out.printf("Rejects  1-thread=%d | 100-threads=%d (business rule)%n", r1.rejects, r100.rejects);
+        System.out.printf("Failures 1-thread=%d | 200-threads=%d%n", r1.failures, r100.failures);
+        System.out.printf("Rejects  1-thread=%d | 200-threads=%d (business rule)%n", r1.rejects, r100.rejects);
 
         System.out.println("\n=== BENCHMARK FINISHED ===");
     }
