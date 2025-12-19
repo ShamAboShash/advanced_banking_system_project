@@ -11,13 +11,13 @@ public class UserDAO {
     private final Connection conn = DatabaseConnection.getInstance().getConnection();
 
     public void saveUser(User user) {
-        String sql = """
-MERGE INTO Users KEY(id) VALUES (?, ?, ?, ?)""";
+        String sql = "MERGE INTO Users KEY(id) VALUES (?, ?, ?, ?, ?)";
         try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setString(1, user.getUserId());
             pstmt.setString(2, user.getUsername());
-            pstmt.setString(3, user.passwordHash);
-            pstmt.setString(4, user.getRole().getDisplayName());
+            pstmt.setString(3, user.getPasswordHash());
+            pstmt.setString(4, user.getPhoneNumber());  // after role
+            pstmt.setString(5, user.getRole().getDisplayName());
             pstmt.executeUpdate();
             System.out.println("User saved: " + user);
         } catch (SQLException e) {
@@ -58,15 +58,16 @@ MERGE INTO Users KEY(id) VALUES (?, ?, ?, ?)""";
         String id = rs.getString("id");
         String username = rs.getString("username");
         String passwordHash = rs.getString("password");
+        String phone = rs.getString("phoneNumber");
         String roleStr = rs.getString("role");
 
         Role role = Role.fromString(roleStr);
 
         return switch (role) {
-            case CUSTOMER -> new Customer(id, username, passwordHash);
-            case TELLER   -> new Teller(id, username, passwordHash);
-            case MANAGER  -> new Manager(id, username, passwordHash);
-            case ADMIN    -> new Admin(id, username, passwordHash);
+            case CUSTOMER -> new Customer(id, username, passwordHash,phone);
+            case TELLER   -> new Teller(id, username, passwordHash,phone);
+            case MANAGER  -> new Manager(id, username, passwordHash,phone);
+            case ADMIN    -> new Admin(id, username, passwordHash,phone);
         };
     }
 
@@ -113,5 +114,58 @@ MERGE INTO Users KEY(id) VALUES (?, ?, ?, ?)""";
         } catch (SQLException e) {
             System.err.println("Error deleting user: " + e.getMessage());
         }
+    }
+
+//
+//    public User loadUserByPhoneAndPassword(String phone, String password) {
+//        String sql = "SELECT * FROM Users WHERE phoneNumber = ?";
+//        try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+//            pstmt.setString(1, phone);
+//            ResultSet rs = pstmt.executeQuery();
+//            if (rs.next()) {
+//                User user = buildUserFromResultSet(rs);
+//                if (user.checkPassword(password)) {
+//                    return user;
+//                }
+//            }
+//        } catch (SQLException e) {
+//            e.printStackTrace();
+//        }
+//        return null;
+//    }
+
+    public User loadUserByPhone(String phone) {
+        String sql = "SELECT * FROM Users WHERE phoneNumber = ?";
+        try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setString(1, phone);
+            ResultSet rs = pstmt.executeQuery();
+            if (rs.next()) {
+                return buildUserFromResultSet(rs);
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return null;
+    }
+
+    // Add this method to UserDAO.java
+    public User loadUserByPhoneAndPassword(String phoneNumber, String plainPassword) {
+        String sql = "SELECT * FROM Users WHERE phoneNumber = ?";
+        try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setString(1, phoneNumber);
+            try (ResultSet rs = pstmt.executeQuery()) {
+                if (rs.next()) {
+                    User user = buildUserFromResultSet(rs);
+                    // Check password using your hash method
+                    if (user.checkPassword(plainPassword)) {
+                        return user;
+                    }
+                }
+            }
+        } catch (SQLException e) {
+            System.err.println("Error during login by phone: " + e.getMessage());
+            e.printStackTrace();
+        }
+        return null; // Invalid phone or password
     }
 }

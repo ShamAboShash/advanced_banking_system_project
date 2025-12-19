@@ -1,13 +1,12 @@
-// src/main/java/com/bankingSystem/Roles/Customer.java
+// Example for Customer.java (same for Teller, Manager)
 package com.bankingSystem.user;
 
 public class Customer extends User {
-    public Customer(String username, String password) {
-        super(username, password, Role.CUSTOMER);
+    public Customer(String username, String password, String phoneNumber) {
+        super(username, password, phoneNumber, Role.CUSTOMER);
     }
 
-    // For loading from DB
-    public Customer(String userId, String username, String passwordHash) {
-        super(userId, username, passwordHash, Role.CUSTOMER);
+    public Customer(String userId, String username, String passwordHash, String phoneNumber) {
+        super(userId, username, passwordHash, phoneNumber, Role.CUSTOMER);
     }
 }

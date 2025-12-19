@@ -2,7 +2,6 @@
 package com.bankingSystem.Proxy;
 
 import com.bankingSystem.Account.*;
-import com.bankingSystem.Account.statePattern.*;
 import com.bankingSystem.Database.*;
 import com.bankingSystem.user.*;
 import com.bankingSystem.Transaction.*;
@@ -32,7 +31,6 @@ public class BankingServiceImpl implements BankingService {
     @Override
     public void modifyAccountInfo(String ownerId, Account account, String field, String newValue) {
         if (account.getOwnerId().equals(ownerId)) {
-            // Use your existing modify logic or add setters
             account.modify(field, newValue);
         } else {
             throw new SecurityException("Cannot modify another's account");
@@ -43,14 +41,20 @@ public class BankingServiceImpl implements BankingService {
     public Account createAccount(String accountType, String ownerId) {
         Account account;
         switch (accountType.toLowerCase()) {
-            case "savings" -> account = new SavingsAccount("SAV-" + System.currentTimeMillis(), ownerId);
-            case "checking" -> account = new CheckingAccount("CHK-" + System.currentTimeMillis(), ownerId);
-            case "loan" -> account = new LoanAccount("LOAN-" + System.currentTimeMillis(), ownerId, 0.0);
-            case "investment" -> account = new InvestmentAccount("INV-" + System.currentTimeMillis(), ownerId);
+            case "savings" -> account = new SavingsAccount(generateShortId("SAV"), ownerId);
+            case "checking" -> account = new CheckingAccount(generateShortId("CHK"), ownerId);
+            case "loan" -> account = new LoanAccount(generateShortId("LOAN"), ownerId, 0.0);
+            case "investment" -> account = new InvestmentAccount(generateShortId("INV"), ownerId);
             default -> throw new IllegalArgumentException("Unknown account type");
         }
         account.persist();
         return account;
+    }
+
+    // ← NEW: Generate short IDs like SAV-001
+    private static int counter = 1;
+    private String generateShortId(String prefix) {
+        return String.format("%s-%03d", prefix, counter++);
     }
 
     @Override
@@ -74,20 +78,19 @@ public class BankingServiceImpl implements BankingService {
 
     @Override
     public List<User> getAllTellers() {
-        // Implement filtering by role if needed
-        return userDAO.getAllUsersByRole("Teller"); // Add this method to UserDAO
+        return userDAO.getAllUsersByRole("Teller");
     }
 
+    // ← FIXED: Added phone number
     @Override
-    public void addTeller(String username, String password) {
-        Teller teller = new Teller(username, password);
+    public void addTeller(String username, String password, String phoneNumber) {
+        Teller teller = new Teller(username, password, phoneNumber);
         teller.persist();
     }
 
     @Override
     public void deleteTeller(String userId) {
-        // Add delete method to UserDAO or mark as inactive
-        new UserDAO().deleteUser(userId); // Implement if needed
+        userDAO.deleteUser(userId);
     }
 
     @Override

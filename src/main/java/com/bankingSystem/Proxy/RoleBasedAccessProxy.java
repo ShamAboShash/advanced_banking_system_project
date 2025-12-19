@@ -9,25 +9,23 @@ import java.util.List;
 
 public class RoleBasedAccessProxy implements BankingService {
     private final BankingServiceImpl realService = new BankingServiceImpl();
-    private final User currentUser; // Set at login
+    private final User currentUser;
 
     public RoleBasedAccessProxy(User currentUser) {
         this.currentUser = currentUser;
     }
 
-    private void checkPermission(String requiredRole) {
-        if (!currentUser.getRole().name().equalsIgnoreCase(requiredRole) &&
-                !currentUser.getRole().name().equalsIgnoreCase("ADMIN")) { // Admin can do everything
-            throw new SecurityException("Access denied: Required role " + requiredRole);
+    private void requireRole(Role requiredRole) {
+        if (currentUser.getRole() != requiredRole && currentUser.getRole() != Role.ADMIN) {
+            throw new SecurityException("Access denied: Requires " + requiredRole.getDisplayName() + " role");
         }
     }
 
-    // Customer methods
     @Override
     public void performTransaction(String ownerId, Account from, Account to, double amount, String type) {
         if (currentUser.getRole() == Role.CUSTOMER) {
             if (!currentUser.getUserId().equals(ownerId)) {
-                throw new SecurityException("Customers can only transact on their own accounts");
+                throw new SecurityException("Customers can only perform transactions on their own accounts");
             }
         }
         realService.performTransaction(ownerId, from, to, amount, type);
@@ -36,7 +34,7 @@ public class RoleBasedAccessProxy implements BankingService {
     @Override
     public List<Transaction> getTransactionHistory(String ownerId, String accountNumber) {
         if (currentUser.getRole() == Role.CUSTOMER && !currentUser.getUserId().equals(ownerId)) {
-            throw new SecurityException("Customers can only view their own history");
+            throw new SecurityException("Customers can only view their own transaction history");
         }
         return realService.getTransactionHistory(ownerId, accountNumber);
     }
@@ -49,59 +47,58 @@ public class RoleBasedAccessProxy implements BankingService {
         realService.modifyAccountInfo(ownerId, account, field, newValue);
     }
 
-    // Teller methods
     @Override
     public Account createAccount(String accountType, String ownerId) {
-        checkPermission("TELLER");
+        requireRole(Role.TELLER);
         return realService.createAccount(accountType, ownerId);
     }
 
     @Override
     public void changeAccountState(String accountNumber, String newState) {
-        checkPermission("TELLER");
+        requireRole(Role.TELLER);
         realService.changeAccountState(accountNumber, newState);
     }
 
     @Override
     public Account findAccountByNumber(String accountNumber) {
-        checkPermission("TELLER");
+        requireRole(Role.TELLER);
         return realService.findAccountByNumber(accountNumber);
     }
 
-    // Manager methods
     @Override
     public List<User> getAllTellers() {
-        checkPermission("MANAGER");
+        requireRole(Role.MANAGER);
         return realService.getAllTellers();
     }
 
+    // ← FIXED: Added override with phone number
     @Override
-    public void addTeller(String username, String password) {
-        checkPermission("MANAGER");
-        realService.addTeller(username, password);
+    public void addTeller(String username, String password, String phoneNumber) {
+        requireRole(Role.MANAGER);
+        realService.addTeller(username, password, phoneNumber);
     }
 
     @Override
     public void deleteTeller(String userId) {
-        checkPermission("MANAGER");
+        requireRole(Role.MANAGER);
         realService.deleteTeller(userId);
     }
 
     @Override
     public List<User> getAllCustomers() {
-        checkPermission("MANAGER");
+        requireRole(Role.MANAGER);
         return realService.getAllCustomers();
     }
 
     @Override
     public List<Transaction> getAllTransactionsReport() {
-        checkPermission("MANAGER");
+        requireRole(Role.MANAGER);
         return realService.getAllTransactionsReport();
     }
 
     @Override
     public List<Account> getAllAccountsReport() {
-        checkPermission("MANAGER");
+        requireRole(Role.MANAGER);
         return realService.getAllAccountsReport();
     }
 }

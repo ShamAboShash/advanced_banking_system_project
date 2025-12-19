@@ -20,8 +20,7 @@ public interface BankingService {
 
     // Manager permissions
     List<User> getAllTellers();
-    void addTeller(String username, String password);
-    void deleteTeller(String userId);
+    void addTeller(String username, String password, String phoneNumber);    void deleteTeller(String userId);
     List<User> getAllCustomers();
     List<Transaction> getAllTransactionsReport();
     List<Account> getAllAccountsReport();
