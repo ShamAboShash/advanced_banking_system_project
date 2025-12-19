@@ -9,7 +9,7 @@ import com.bankingSystem.Transaction.*;
 import java.util.List;
 
 public class BankingServiceImpl implements BankingService {
-    private final TransactionService transactionService = new TransactionService();
+    private static TransactionService transactionService = TransactionService.getInstance();
     private final AccountDAO accountDAO = new AccountDAO();
     private final UserDAO userDAO = new UserDAO();
     private final TransactionDAO transactionDAO = new TransactionDAO();

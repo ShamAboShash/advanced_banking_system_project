@@ -1,4 +1,3 @@
-// src/main/java/com/bankingSystem/BankingConsoleApp.java
 package com.bankingSystem;
 
 import com.bankingSystem.Account.*;
