@@ -3,6 +3,7 @@ package com.bankingSystem;
 import com.bankingSystem.Account.*;
 import com.bankingSystem.Database.*;
 import com.bankingSystem.Notification.*;
+import com.bankingSystem.Notification.Observer;
 import com.bankingSystem.Transaction.TransactionService;
 import com.bankingSystem.user.*;
 import com.bankingSystem.Proxy.BankingService;
@@ -10,7 +11,6 @@ import com.bankingSystem.Proxy.RoleBasedAccessProxy;
 import com.bankingSystem.Transaction.Transaction;
 
 import java.time.LocalDate;
-import java.time.format.DateTimeFormatter;
 import java.util.*;
 
 public class CoreApplication {
@@ -19,6 +19,12 @@ public class CoreApplication {
     private static final UserDAO userDAO = new UserDAO();
     private static final AccountDAO accountDAO = new AccountDAO();
     private static final TransactionDAO transactionDAO = new TransactionDAO();
+
+    // ====== Session notification objects (per login) ======
+    private static Observer sessionInApp;
+    private static Observer sessionSms;
+    private static NotificationRealtimeListener sessionListener;
+    private static Thread sessionListenerThread;
 
     // Colors for pretty console
     private static class Colors {
@@ -38,27 +44,61 @@ public class CoreApplication {
         System.out.println(Colors.CYAN + "╚" + line + "╝" + Colors.RESET + "\n");
     }
 
+    private static void viewMyNotificationsFromDb(User currentUser) {
+        printHeader("MY NOTIFICATIONS (FROM DB)");
+        NotificationDAO dao = new NotificationDAO();
+        dao.printNotificationsForUser(currentUser.getUserId());
+    }
+
+    // ====== Notification session start/stop ======
+    private static void startNotificationSession(User user) {
+        TransactionService txService = TransactionService.getInstance();
+
+        // Register observers for THIS logged-in user only
+        sessionInApp = new InAppNotifier(user.getUserId(), user.getRole());
+        sessionSms   = new SMSNotifier(user.getUserId(), user.getRole());
+        txService.registerObserver(sessionInApp);
+        txService.registerObserver(sessionSms);
+
+        // Start real-time listener thread for THIS user
+        sessionListener = new NotificationRealtimeListener(user.getUserId());
+        sessionListenerThread = new Thread(sessionListener, "notif-" + user.getUserId());
+        sessionListenerThread.setDaemon(true);
+        sessionListenerThread.start();
+
+        synchronized (ConsoleLock.PRINT_LOCK) {
+            System.out.println(Colors.PURPLE +
+                    "✓ Real-time notifications enabled for " + user.getUsername() +
+                    " (" + user.getRole().getDisplayName() + ")" + Colors.RESET + "\n");
+        }
+    }
+
+    private static void stopNotificationSession() {
+        TransactionService txService = TransactionService.getInstance();
+
+        if (sessionListener != null) sessionListener.stop();
+        if (sessionListenerThread != null) sessionListenerThread.interrupt();
+
+        if (sessionInApp != null) txService.removeObserver(sessionInApp);
+        if (sessionSms != null) txService.removeObserver(sessionSms);
+
+        sessionListener = null;
+        sessionListenerThread = null;
+        sessionInApp = null;
+        sessionSms = null;
+    }
+
     public static void main(String[] args) {
         printHeader("ADVANCED BANKING SYSTEM");
 
-        // === OBSERVER PATTERN: Register notification channels ===
-        TransactionService transactionService = TransactionService.getInstance();
+        synchronized (ConsoleLock.PRINT_LOCK) {
+            System.out.println(Colors.PURPLE +
+                    "✓ Notification system ready (In-App + SMS). Session-based real-time enabled after login.\n"
+                    + Colors.RESET);
+        }
 
-        // Customer notifications
-        transactionService.registerObserver(new EmailNotifier(Role.CUSTOMER));
-        transactionService.registerObserver(new SMSNotifier(Role.CUSTOMER));
-        transactionService.registerObserver(new InAppNotifier(Role.CUSTOMER));
-
-        // Manager notifications (for approvals)
-        transactionService.registerObserver(new EmailNotifier(Role.MANAGER));
-        transactionService.registerObserver(new SMSNotifier(Role.MANAGER));
-        transactionService.registerObserver(new InAppNotifier(Role.MANAGER));
-
-        System.out.println(Colors.PURPLE + "✓ Notification system activated: Email, SMS, In-App alerts enabled\n" + Colors.RESET);
-
-
-
-        printHeader("ADVANCED BANKING SYSTEM");
+        // ✅ one global observer to persist ALL notifications in DB
+        TransactionService.getInstance().registerObserver(new NotificationPersistenceObserver());
 
         while (true) {
             System.out.println("1. Customer");
@@ -96,10 +136,17 @@ public class CoreApplication {
                 continue;
             }
 
-            System.out.println(Colors.GREEN + "Login successful! Welcome, " + user.getUsername() + " (" + user.getRole().getDisplayName() + ")" + Colors.RESET + "\n");
+            System.out.println(Colors.GREEN + "Login successful! Welcome, " + user.getUsername() +
+                    " (" + user.getRole().getDisplayName() + ")" + Colors.RESET + "\n");
+
+            // ✅ Start notifications for this session
+            startNotificationSession(user);
 
             BankingService service = new RoleBasedAccessProxy(user);
             roleMenuLoop(service, user);
+
+            // ✅ Ensure notifications stop after user logs out
+            stopNotificationSession();
         }
     }
 
@@ -122,10 +169,30 @@ public class CoreApplication {
             }
 
             try {
+                // ✅ View notifications from DB
+                if (currentUser.getRole() == Role.CUSTOMER && choice.equals("6")) {
+                    viewMyNotificationsFromDb(currentUser);
+                    continue;
+                }
+                if (currentUser.getRole() == Role.TELLER && choice.equals("6")) {
+                    viewMyNotificationsFromDb(currentUser);
+                    continue;
+                }
+                if (currentUser.getRole() == Role.MANAGER && choice.equals("8")) {
+                    viewMyNotificationsFromDb(currentUser);
+                    continue;
+                }
+
+                // ✅ Manager decision flow
+                if (currentUser.getRole() == Role.MANAGER && choice.equals("9")) {
+                    managerApproveRejectFlow(currentUser);
+                    continue;
+                }
+
                 switch (currentUser.getRole()) {
                     case CUSTOMER -> handleCustomerAction(service, currentUser, choice);
                     case TELLER -> handleTellerAction(service, choice);
-                    case MANAGER -> handleManagerAction(service, choice);
+                    case MANAGER -> handleManagerAction(service, currentUser, choice);
                 }
             } catch (SecurityException e) {
                 System.out.println(Colors.RED + "Access Denied: " + e.getMessage() + Colors.RESET + "\n");
@@ -142,6 +209,7 @@ public class CoreApplication {
         System.out.println("3. Withdraw money");
         System.out.println("4. Transfer money");
         System.out.println("5. View my accounts");
+        System.out.println("6. View my notifications (DB)");
     }
 
     private static void tellerMenu() {
@@ -150,6 +218,7 @@ public class CoreApplication {
         System.out.println("3. Find account by number");
         System.out.println("4. Change account state");
         System.out.println("5. Perform transaction on any account");
+        System.out.println("6. View my notifications (DB)");
     }
 
     private static void managerMenu() {
@@ -160,6 +229,55 @@ public class CoreApplication {
         System.out.println("5. Daily transaction report per account");
         System.out.println("6. Weekly transaction report per account");
         System.out.println("7. All transactions report");
+        System.out.println("8. View my notifications (DB)");
+        System.out.println("9. Pending transactions (Approve/Reject)");
+    }
+
+    // ==================== MANAGER APPROVE/REJECT FLOW ====================
+    private static void managerApproveRejectFlow(User manager) {
+        List<Transaction> pending = transactionDAO.loadPendingTransactions();
+
+
+        printHeader("PENDING TRANSACTIONS (" + pending.size() + ")");
+        if (pending.isEmpty()) {
+            System.out.println("No pending transactions.\n");
+            return;
+        }
+
+        for (int i = 0; i < pending.size(); i++) {
+            Transaction tx = pending.get(i);
+            System.out.println((i + 1) + ") " + tx.getTransactionId()
+                    + " | " + tx.getType()
+                    + " | " + tx.getAmount()
+                    + " | from=" + tx.getFromAccount()
+                    + " | to=" + tx.getToAccount()
+                    + " | status=" + tx.getStatus());
+        }
+
+        System.out.print("\nChoose transaction number: ");
+        int idx = Integer.parseInt(scanner.nextLine()) - 1;
+        if (idx < 0 || idx >= pending.size()) {
+            System.out.println("Invalid selection.\n");
+            return;
+        }
+
+        Transaction selected = pending.get(idx);
+
+        System.out.print("Approve (A) or Reject (R)? ");
+        String decision = scanner.nextLine().trim().toUpperCase();
+
+        boolean approved;
+        if (decision.equals("A")) approved = true;
+        else if (decision.equals("R")) approved = false;
+        else {
+            System.out.println("Invalid decision.\n");
+            return;
+        }
+
+        TransactionService.getInstance()
+                .managerDecision(selected.getTransactionId(), approved, manager.getUserId());
+
+        System.out.println(Colors.GREEN + "Decision submitted.\n" + Colors.RESET);
     }
 
     // ==================== CUSTOMER ACTIONS ====================
@@ -366,7 +484,7 @@ public class CoreApplication {
     }
 
     // ==================== MANAGER ACTIONS ====================
-    private static void handleManagerAction(BankingService service, String choice) {
+    private static void handleManagerAction(BankingService service, User manager, String choice) {
         switch (choice) {
             case "1" -> viewAllCustomers(service);
             case "2" -> viewAllTellers(service);
@@ -375,6 +493,7 @@ public class CoreApplication {
             case "5" -> dailyReportPerAccount();
             case "6" -> weeklyReportPerAccount();
             case "7" -> viewAllTransactions(service);
+            // choice 8 + 9 are handled earlier in roleMenuLoop
             default -> System.out.println(Colors.RED + "Invalid choice.\n" + Colors.RESET);
         }
     }

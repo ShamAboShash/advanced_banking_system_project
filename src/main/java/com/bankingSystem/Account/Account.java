@@ -30,6 +30,11 @@ public abstract class Account implements AccountComponent {
         this.creationDate = LocalDateTime.now();
         this.state = new ActiveState();
     }
+    private static boolean persistenceEnabled = true;
+
+    public static void disablePersistenceForTests() {
+        persistenceEnabled = false;
+    }
 
     // Abstract method - must be overridden in subclasses to return double
     public abstract double calculateInterest();
@@ -97,6 +102,7 @@ public abstract class Account implements AccountComponent {
     }
 
     public void persist() {
+        if (!persistenceEnabled) return;
         new com.bankingSystem.Database.AccountDAO().saveAccount(this);
     }
 

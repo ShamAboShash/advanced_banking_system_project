@@ -71,6 +71,20 @@ public class UserDAO {
         };
     }
 
+
+    //جيب مدير افتراضي
+    public User loadFirstManager() {
+        String sql = "SELECT * FROM Users WHERE role = 'Manager' LIMIT 1";
+        try (PreparedStatement ps = conn.prepareStatement(sql);
+             ResultSet rs = ps.executeQuery()) {
+            if (rs.next()) return buildUserFromResultSet(rs);
+        } catch (SQLException e) {
+            throw new RuntimeException(e);
+        }
+        return null;
+    }
+
+
     // Add these methods to UserDAO.java
 
     public List<User> getAllUsersByRole(String roleName) {

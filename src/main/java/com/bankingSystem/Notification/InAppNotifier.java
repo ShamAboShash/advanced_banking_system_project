@@ -1,44 +1,31 @@
 package com.bankingSystem.Notification;
 
+import com.bankingSystem.Database.NotificationDAO;
 import com.bankingSystem.user.Role;
-
-import java.util.ArrayList;
-import java.util.List;
-
 public class InAppNotifier implements Observer {
-    private final Role role;
-    private final List<NotificationEvent> inbox = new ArrayList<>();
 
-    public InAppNotifier(Role role) {
-        this.role = role;
+    private final String sessionUserId;
+    private final Role sessionRole;
+
+    public InAppNotifier(String sessionUserId, Role sessionRole) {
+        this.sessionUserId = sessionUserId;
+        this.sessionRole = sessionRole;
     }
 
     @Override
-    public boolean supports(Role role) {
-        return this.role == role;
+    public boolean supports(NotificationEvent event) {
+        return event != null
+                && sessionRole == event.getTargetRole()
+                && sessionUserId != null
+                && sessionUserId.equals(event.getTargetUserId());
     }
 
     @Override
     public void update(NotificationEvent event) {
-        inbox.add(event);
-        System.out.println("""
-        \n🔔 ===== IN-APP NOTIFICATION =====
-        Time        : %s
-        Target Role : %s
-        Event       : %s
-        Message     : %s
-        Tx ID       : %s
-        =================================
-        """.formatted(
-                event.getTimestamp(),
-                event.getTargetRole(),
-                event.getType(),
-                event.getMessage(),
-                event.getTransactionId()
-        ));
-    }
-
-    public List<NotificationEvent> getInbox() {
-        return new ArrayList<>(inbox);
+        synchronized (ConsoleLock.PRINT_LOCK) {
+            System.out.println("""
+                \n🔔 IN-APP (SESSION) -> userId=%s | %s | %s
+                """.formatted(event.getTargetUserId(), event.getType(), event.getMessage()));
+        }
     }
 }
