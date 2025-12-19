@@ -1,0 +1,9 @@
+package com.bankingSystem.Notification;
+
+public enum NotificationEventType {
+    TRANSACTION_PENDING_MANAGER_APPROVAL,
+    TRANSACTION_APPROVED_BY_MANAGER,
+    TRANSACTION_REJECTED_BY_MANAGER,
+    TRANSACTION_COMPLETED,
+    TRANSACTION_FAILED
+}

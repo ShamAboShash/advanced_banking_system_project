@@ -1,16 +1,31 @@
-// src/main/java/com/bankingSystem/Transaction/TransactionService.java
 package com.bankingSystem.Transaction;
 
 import com.bankingSystem.Account.Account;
 import com.bankingSystem.Database.AccountDAO;
 import com.bankingSystem.Database.TransactionDAO;
+import com.bankingSystem.Notification.*;
 import com.bankingSystem.Transaction.ChainOfResponsability.*;
+import com.bankingSystem.user.Role;
 
-public class TransactionService {
+import java.util.ArrayList;
+import java.util.List;
+
+public class TransactionService implements Subject {
+
+    // ✅ Singleton
+    private static final TransactionService INSTANCE = new TransactionService();
+
+    public static TransactionService getInstance() {
+        return INSTANCE;
+    }
+
     private ApprovalHandler approvalChain;
     private final TransactionDAO transactionDAO = new TransactionDAO();
     private final AccountDAO accountDAO = new AccountDAO();
 
+    private final List<Observer> observers = new ArrayList<>();
+
+    // ✅ constructor صار private
     public TransactionService() {
         buildApprovalChain();
     }
@@ -25,51 +40,102 @@ public class TransactionService {
         approvalChain = small;
     }
 
-    /**
-     * Main method called from demo for deposits, withdrawals, transfers
-     */
+    @Override
+    public void registerObserver(Observer observer) {
+        observers.add(observer);
+    }
+
+    @Override
+    public void removeObserver(Observer observer) {
+        observers.remove(observer);
+    }
+
+    @Override
+    public void notifyObservers(NotificationEvent event) {
+        for (Observer o : observers) {
+            if (o.supports(event.getTargetRole())) {
+                o.update(event);
+            }
+        }
+    }
+
+    // ===== Manager decision event (approved / rejected) =====
+    public void notifyManagerDecision(Transaction tx, boolean approved) {
+        if (approved) {
+            notifyObservers(new NotificationEvent(
+                    NotificationEventType.TRANSACTION_APPROVED_BY_MANAGER,
+                    "Manager approved transaction (" + tx.getType() + ", " + tx.getAmount() + ")",
+                    tx.getTransactionId(),
+                    Role.CUSTOMER
+            ));
+        } else {
+            notifyObservers(new NotificationEvent(
+                    NotificationEventType.TRANSACTION_REJECTED_BY_MANAGER,
+                    "Manager rejected transaction (" + tx.getType() + ", " + tx.getAmount() + ")",
+                    tx.getTransactionId(),
+                    Role.CUSTOMER
+            ));
+        }
+
+        // optional: confirm to manager
+        notifyObservers(new NotificationEvent(
+                approved ? NotificationEventType.TRANSACTION_APPROVED_BY_MANAGER
+                        : NotificationEventType.TRANSACTION_REJECTED_BY_MANAGER,
+                "Decision recorded for TxID: " + tx.getTransactionId(),
+                tx.getTransactionId(),
+                Role.MANAGER
+        ));
+    }
+
     public void processTransaction(Account from, Account to, double amount, String type) {
         Transaction tx = new Transaction(type, amount,
                 from != null ? from.getAccountNumber() : null,
                 to != null ? to.getAccountNumber() : null);
 
-        // Run approval chain
         approvalChain.handle(tx);
 
         if (tx.isApproved()) {
-            // === EXECUTE THE MONEY MOVEMENT ===
+            // execute
             switch (type) {
                 case "DEPOSIT" -> to.deposit(amount);
                 case "WITHDRAW" -> from.withdraw(amount);
-                case "TRANSFER" -> {
-                    from.withdraw(amount);
-                    to.deposit(amount);
-                }
+                case "TRANSFER" -> { from.withdraw(amount); to.deposit(amount); }
                 default -> throw new IllegalArgumentException("Unknown transaction type: " + type);
             }
 
             tx.setStatus("COMPLETED");
 
-            // Add to in-memory history
             if (from != null) from.addTransaction(tx);
             if (to != null) to.addTransaction(tx);
 
-            // === PERSIST ACCOUNTS WITH NEW BALANCE ===
             if (from != null) from.persist();
             if (to != null) to.persist();
 
-            System.out.println("Transaction COMPLETED and balances updated: " + tx.getDescription());
+            // notify customer: completed
+            notifyObservers(new NotificationEvent(
+                    NotificationEventType.TRANSACTION_COMPLETED,
+                    "Transaction completed successfully (" + type + ", " + amount + ")",
+                    tx.getTransactionId(),
+                    Role.CUSTOMER
+            ));
+
         } else {
-            System.out.println("Transaction requires manager approval: " + tx.getStatus());
+            // Make pending explicit (حتى ما نضيع بين statuses)
+            tx.setStatus("PENDING_MANAGER_APPROVAL");
+
+            // notify manager: pending approval
+            notifyObservers(new NotificationEvent(
+                    NotificationEventType.TRANSACTION_PENDING_MANAGER_APPROVAL,
+                    "Transaction requires manager approval (Amount: " + amount + ")",
+                    tx.getTransactionId(),
+                    Role.MANAGER
+            ));
         }
 
-        // === ALWAYS SAVE THE TRANSACTION RECORD (for audit and pending approval) ===
+        // always save for audit + pending workflow
         transactionDAO.saveTransaction(tx);
     }
 
-    /**
-     * Called by Manager.approveTransaction() to execute pending large transactions
-     */
     public void executeApprovedTransaction(String transactionId) {
         Transaction tx = transactionDAO.loadTransactionById(transactionId);
 
@@ -85,36 +151,32 @@ public class TransactionService {
             switch (tx.getType()) {
                 case "DEPOSIT" -> to.deposit(tx.getAmount());
                 case "WITHDRAW" -> from.withdraw(tx.getAmount());
-                case "TRANSFER" -> {
-                    if (from.getBalance() < tx.getAmount()) {
-                        throw new IllegalStateException("Insufficient funds");
-                    }
-                    from.withdraw(tx.getAmount());
-                    to.deposit(tx.getAmount());
-                }
+                case "TRANSFER" -> { from.withdraw(tx.getAmount()); to.deposit(tx.getAmount()); }
             }
 
-            tx.setStatus("COMPLETED");
-
-            if (from != null) {
-                from.addTransaction(tx);
-                from.persist();
-            }
-            if (to != null) {
-                to.addTransaction(tx);
-                to.persist();
-            }
-
-            // Update status in DB (don't re-insert whole object)
             transactionDAO.updateTransactionStatus(transactionId, "COMPLETED");
 
-            System.out.println("Large transaction EXECUTED successfully: " + transactionId);
+            notifyObservers(new NotificationEvent(
+                    NotificationEventType.TRANSACTION_COMPLETED,
+                    "Transaction executed successfully after manager approval.",
+                    tx.getTransactionId(),
+                    Role.CUSTOMER
+            ));
+
         } catch (Exception e) {
             transactionDAO.updateTransactionStatus(transactionId, "FAILED: " + e.getMessage());
-            System.out.println("Execution failed: " + e.getMessage());
+
+            notifyObservers(new NotificationEvent(
+                    NotificationEventType.TRANSACTION_FAILED,
+                    "Transaction execution failed: " + e.getMessage(),
+                    tx.getTransactionId(),
+                    Role.CUSTOMER
+            ));
         }
     }
 }
+
+
 //package com.bankingSystem.Transaction;
 //
 //import com.bankingSystem.Account.Account;
