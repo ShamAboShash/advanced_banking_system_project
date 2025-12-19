@@ -1,0 +1,6 @@
+#FileLock
+#Fri Dec 19 22:56:12 EET 2025
+hostName=10.2.0.2
+id=19b382f246e114e75f3fd7ce92c2a4f738f7aedf7c2
+method=file
+server=10.2.0.2\:52926
