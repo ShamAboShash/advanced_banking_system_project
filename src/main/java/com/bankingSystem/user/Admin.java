@@ -2,12 +2,12 @@
 package com.bankingSystem.user;
 
 public class Admin extends User {
-    public Admin(String username, String password) {
-        super(username, password, Role.ADMIN);
+    public Admin(String username, String phonNymber ,String password) {
+        super(username, password, phonNymber ,Role.ADMIN);
     }
 
-    public Admin(String userId, String username, String passwordHash) {
-        super(userId, username, passwordHash, Role.ADMIN);
+    public Admin(String userId, String username, String phoneNumber,String passwordHash) {
+        super(userId, username, passwordHash, phoneNumber,Role.ADMIN);
     }
 
     // Admins can manage users, view all reports, etc.

@@ -26,7 +26,7 @@ public class TransactionService implements Subject {
     private final List<Observer> observers = new ArrayList<>();
 
     // ✅ constructor صار private
-    private TransactionService() {
+    public TransactionService() {
         buildApprovalChain();
     }
 
