@@ -33,7 +33,7 @@ public class Manager extends User {
         service.notifyManagerDecision(tx, true);
         service.executeApprovedTransaction(transactionId);
 
-        new TransactionService().executeApprovedTransaction(transactionId);
+         service.executeApprovedTransaction(transactionId);
         System.out.println("Manager " + username + " approved and executed transaction " + transactionId);
     }
 

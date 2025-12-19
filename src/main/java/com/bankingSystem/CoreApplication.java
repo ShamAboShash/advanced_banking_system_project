@@ -2,6 +2,8 @@ package com.bankingSystem;
 
 import com.bankingSystem.Account.*;
 import com.bankingSystem.Database.*;
+import com.bankingSystem.Notification.*;
+import com.bankingSystem.Transaction.TransactionService;
 import com.bankingSystem.user.*;
 import com.bankingSystem.Proxy.BankingService;
 import com.bankingSystem.Proxy.RoleBasedAccessProxy;
@@ -37,6 +39,25 @@ public class CoreApplication {
     }
 
     public static void main(String[] args) {
+        printHeader("ADVANCED BANKING SYSTEM");
+
+        // === OBSERVER PATTERN: Register notification channels ===
+        TransactionService transactionService = TransactionService.getInstance();
+
+        // Customer notifications
+        transactionService.registerObserver(new EmailNotifier(Role.CUSTOMER));
+        transactionService.registerObserver(new SMSNotifier(Role.CUSTOMER));
+        transactionService.registerObserver(new InAppNotifier(Role.CUSTOMER));
+
+        // Manager notifications (for approvals)
+        transactionService.registerObserver(new EmailNotifier(Role.MANAGER));
+        transactionService.registerObserver(new SMSNotifier(Role.MANAGER));
+        transactionService.registerObserver(new InAppNotifier(Role.MANAGER));
+
+        System.out.println(Colors.PURPLE + "✓ Notification system activated: Email, SMS, In-App alerts enabled\n" + Colors.RESET);
+
+
+
         printHeader("ADVANCED BANKING SYSTEM");
 
         while (true) {
