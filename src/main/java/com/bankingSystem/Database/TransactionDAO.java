@@ -149,13 +149,12 @@ public class TransactionDAO {
 
         List<Transaction> transactions = new ArrayList<>();
 
-        // H2-safe: DATE(column) works; performedAt may be null so fallback to timestamp
         String sql = """
-            SELECT * FROM Transactions
-            WHERE (fromAccount = ? OR toAccount = ?)
-              AND DATE(COALESCE(performedAt, timestamp)) = CURRENT_DATE
-            ORDER BY COALESCE(performedAt, timestamp) DESC
-            """;
+        SELECT * FROM Transactions
+        WHERE (fromAccount = ? OR toAccount = ?)
+          AND CAST(COALESCE(performedAt, timestamp) AS DATE) = CURRENT_DATE
+        ORDER BY COALESCE(performedAt, timestamp) DESC
+        """;
 
         try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setString(1, accountNumber);
@@ -222,20 +221,20 @@ public class TransactionDAO {
         List<String> accounts = new ArrayList<>();
 
         String sql = """
-        SELECT DISTINCT acc FROM (
-            SELECT fromAccount AS acc
-            FROM Transactions
-            WHERE fromAccount IS NOT NULL
-              AND DATE(COALESCE(performedAt, timestamp)) = CURRENT_DATE
+    SELECT DISTINCT acc FROM (
+        SELECT fromAccount AS acc
+        FROM Transactions
+        WHERE fromAccount IS NOT NULL
+          AND CAST(COALESCE(performedAt, timestamp) AS DATE) = CURRENT_DATE
 
-            UNION
+        UNION
 
-            SELECT toAccount AS acc
-            FROM Transactions
-            WHERE toAccount IS NOT NULL
-              AND DATE(COALESCE(performedAt, timestamp)) = CURRENT_DATE
-        )
-        """;
+        SELECT toAccount AS acc
+        FROM Transactions
+        WHERE toAccount IS NOT NULL
+          AND CAST(COALESCE(performedAt, timestamp) AS DATE) = CURRENT_DATE
+    )
+    """;
 
         try (Statement stmt = conn.createStatement();
              ResultSet rs = stmt.executeQuery(sql)) {

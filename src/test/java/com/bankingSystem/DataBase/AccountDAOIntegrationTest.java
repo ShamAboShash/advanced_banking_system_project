@@ -6,7 +6,6 @@ import com.bankingSystem.Database.DatabaseConnection;
 import org.junit.jupiter.api.*;
 
 import java.sql.Connection;
-import java.sql.Statement;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -19,93 +18,149 @@ class AccountDAOIntegrationTest {
     void setup() throws Exception {
         dao = new AccountDAO();
         conn = DatabaseConnection.getInstance().getConnection();
-
-        // تنظيف حتى ما تتداخل النتائج
-        try (Statement st = conn.createStatement()) {
-            st.executeUpdate("DELETE FROM Accounts");
-            st.executeUpdate("DELETE FROM Transactions"); // لأن loadAccount بيجيب history
-        }
+        conn.createStatement().execute("DELETE FROM Accounts");
+        conn.createStatement().execute("DELETE FROM Transactions"); // لأن loadAccount يقرأ history
     }
 
     @Test
-    void loadAccount_nonExisting_shouldReturnNull() {
-        assertNull(dao.loadAccount("NO-ACC"));
-    }
-
-    @Test
-    void getAccountsByOwner_whenNone_shouldReturnEmptyList() {
-        assertTrue(dao.getAccountsByOwner("no-owner").isEmpty());
-    }
-
-    @Test
-    void getAllAccounts_shouldReturnSavedOnes() {
-        dao.saveAccount(new SavingsAccount("S-1", "o1"));
-        dao.saveAccount(new CheckingAccount("C-1", "o2"));
-
-        var all = dao.getAllAccounts();
-        assertTrue(all.size() >= 2);
-    }
-
-    @Test
-    void updateBalance_existingAccount_shouldPersist() {
-        SavingsAccount acc = new SavingsAccount("S-200", "owner");
-        acc.deposit(50);
+    void saveAndLoad_savings_shouldPersistFields() {
+        SavingsAccount acc = new SavingsAccount("S-900", "ownerX");
+        acc.deposit(150);
+        acc.freeze();
         dao.saveAccount(acc);
 
-        dao.updateBalance("S-200", 999);
-
-        Account loaded = dao.loadAccount("S-200");
+        Account loaded = dao.loadAccount("S-900");
         assertNotNull(loaded);
+        assertEquals("S-900", loaded.getAccountNumber());
+        assertEquals("ownerX", loaded.getOwnerId());
+        assertEquals(150, loaded.getBalance(), 0.001);
+        assertEquals("Frozen", loaded.state.getClass().getSimpleName().replace("State", ""));
+        assertTrue(loaded instanceof SavingsAccount);
+    }
+
+    @Test
+    void saveAndLoad_checking_shouldPersistTypeAndDefaultStateActive() {
+        CheckingAccount acc = new CheckingAccount("C-101", "ownerA");
+        acc.deposit(30);
+        dao.saveAccount(acc);
+
+        Account loaded = dao.loadAccount("C-101");
+        assertNotNull(loaded);
+        assertTrue(loaded instanceof CheckingAccount);
+        // إذا ما غيّرتي state قبل الحفظ غالباً Active
+        assertEquals("Active", loaded.state.getClass().getSimpleName().replace("State", ""));
+    }
+
+    @Test
+    void saveAndLoad_investment_shouldWork() {
+        InvestmentAccount inv = new InvestmentAccount("I-77", "ownerInv");
+        inv.deposit(999);
+        dao.saveAccount(inv);
+
+        Account loaded = dao.loadAccount("I-77");
+        assertNotNull(loaded);
+        assertTrue(loaded instanceof InvestmentAccount);
         assertEquals(999, loaded.getBalance(), 0.001);
     }
 
     @Test
-    void updateBalance_nonExisting_shouldNotThrow() {
-        assertDoesNotThrow(() -> dao.updateBalance("NO-ACC", 123));
+    void saveAndLoad_loan_shouldPersistLoanAmount_andStateSuspended() {
+        LoanAccount loan = new LoanAccount("L-001", "ownerL", 5000);
+        loan.suspend();
+        dao.saveAccount(loan);
+
+        Account loaded = dao.loadAccount("L-001");
+        assertNotNull(loaded);
+        assertTrue(loaded instanceof LoanAccount);
+        assertEquals("Suspended", loaded.state.getClass().getSimpleName().replace("State", ""));
+        // إذا عندك getter للـ loanAmount زيدي assert عليه
     }
 
     @Test
-    void updateAccountState_existing_shouldPersist() {
-        SavingsAccount acc = new SavingsAccount("S-300", "owner");
+    void updateBalance_shouldChangeBalanceInDb() {
+        SavingsAccount acc = new SavingsAccount("S-1", "o1");
+        acc.deposit(10);
         dao.saveAccount(acc);
 
-        dao.updateAccountState("S-300", "Frozen");
+        dao.updateBalance("S-1", 777.0);
 
-        Account loaded = dao.loadAccount("S-300");
+        Account loaded = dao.loadAccount("S-1");
+        assertNotNull(loaded);
+        assertEquals(777.0, loaded.getBalance(), 0.001);
+    }
+
+    @Test
+    void updateAccountState_shouldPersistState() {
+        SavingsAccount acc = new SavingsAccount("S-2", "o2");
+        dao.saveAccount(acc);
+
+        dao.updateAccountState("S-2", "Frozen");
+
+        Account loaded = dao.loadAccount("S-2");
         assertNotNull(loaded);
         assertEquals("Frozen", loaded.state.getClass().getSimpleName().replace("State", ""));
     }
 
     @Test
-    void updateAccountState_nonExisting_shouldNotThrow() {
-        assertDoesNotThrow(() -> dao.updateAccountState("NO-ACC", "Suspended"));
-    }
-
-    @Test
-    void deleteAccount_existing_shouldRemove() {
-        SavingsAccount acc = new SavingsAccount("S-400", "owner");
+    void deleteAccount_existing_shouldRemoveIt() {
+        SavingsAccount acc = new SavingsAccount("S-del", "o3");
         dao.saveAccount(acc);
 
-        dao.deleteAccount("S-400");
+        assertNotNull(dao.loadAccount("S-del"));
 
-        assertNull(dao.loadAccount("S-400"));
+        dao.deleteAccount("S-del");
+        assertNull(dao.loadAccount("S-del"));
     }
 
     @Test
     void deleteAccount_nonExisting_shouldNotThrow() {
-        assertDoesNotThrow(() -> dao.deleteAccount("NO-ACC"));
+        assertDoesNotThrow(() -> dao.deleteAccount("NOPE-123"));
     }
 
     @Test
-    void loadAccount_unknownType_shouldThrowIllegalArgumentException() throws Exception {
-        // ندخل row يدوي بالـ type = "WeirdAccount" لنضرب default branch
-        try (Statement st = conn.createStatement()) {
-            st.executeUpdate("""
-                INSERT INTO Accounts(accountId, accountNumber, balance, creationDate, ownerId, state, type, loanAmount)
-                VALUES('x1','X-1',10,CURRENT_TIMESTAMP,'owner','Active','WeirdAccount',0)
-            """);
-        }
+    void getAllAccounts_shouldReturnAll() {
+        dao.saveAccount(new SavingsAccount("S-a", "o"));
+        dao.saveAccount(new CheckingAccount("C-a", "o"));
+        dao.saveAccount(new InvestmentAccount("I-a", "o"));
 
-        assertThrows(IllegalArgumentException.class, () -> dao.loadAccount("X-1"));
+        var all = dao.getAllAccounts();
+        assertNotNull(all);
+        assertEquals(3, all.size());
+    }
+
+    @Test
+    void getAccountsByOwner_shouldFilter() {
+        dao.saveAccount(new SavingsAccount("S-o1", "owner1"));
+        dao.saveAccount(new CheckingAccount("C-o1", "owner1"));
+        dao.saveAccount(new SavingsAccount("S-o2", "owner2"));
+
+        var owner1 = dao.getAccountsByOwner("owner1");
+        assertEquals(2, owner1.size());
+
+        var owner2 = dao.getAccountsByOwner("owner2");
+        assertEquals(1, owner2.size());
+    }
+
+    @Test
+    void loadAccount_unknownTypeInDb_shouldThrowIllegalArgument() throws Exception {
+        // ندخل record يدويًا بنوع غير معروف حتى نغطي default -> throw
+        conn.createStatement().executeUpdate("""
+            INSERT INTO Accounts(accountId, accountNumber, balance, creationDate, ownerId, state, type, loanAmount)
+            VALUES ('x1', 'X-404', 0, CURRENT_TIMESTAMP, 'o', 'Active', 'WeirdAccount', 0)
+        """);
+
+        assertThrows(IllegalArgumentException.class, () -> dao.loadAccount("X-404"));
+    }
+
+    @Test
+    void loadAccount_unknownState_shouldFallbackToActive() throws Exception {
+        conn.createStatement().executeUpdate("""
+            INSERT INTO Accounts(accountId, accountNumber, balance, creationDate, ownerId, state, type, loanAmount)
+            VALUES ('x2', 'S-unknownState', 5, CURRENT_TIMESTAMP, 'o', 'SOME_NEW_STATE', 'SavingsAccount', 0)
+        """);
+
+        Account loaded = dao.loadAccount("S-unknownState");
+        assertNotNull(loaded);
+        assertEquals("Active", loaded.state.getClass().getSimpleName().replace("State", ""));
     }
 }

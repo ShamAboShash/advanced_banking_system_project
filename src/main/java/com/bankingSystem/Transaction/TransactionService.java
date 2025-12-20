@@ -9,6 +9,8 @@ import com.bankingSystem.Transaction.ChainOfResponsability.*;
 import com.bankingSystem.user.Role;
 import com.bankingSystem.user.User;
 
+
+
 public class TransactionService implements Subject {
 
     // ✅ Singleton
@@ -23,13 +25,19 @@ public class TransactionService implements Subject {
     // ✅ Use centralized NotificationCenter (recommended)
     private final NotificationCenter center = NotificationCenter.getInstance();
 
+    // ===== Notification thresholds (tweak as you like) =====
+    private static final double LARGE_TX_THRESHOLD = 5000.0;
+    private static final double LOW_BALANCE_THRESHOLD = 50.0;
+
     private TransactionService() {
         buildApprovalChain();
     }
+
     public void setDaosForTests(TransactionDAO txDao, AccountDAO accDao) {
         this.transactionDAO = txDao;
         this.accountDAO = accDao;
     }
+
     private void buildApprovalChain() {
         ApprovalHandler small = new SmallTransactionHandler();
         ApprovalHandler large = new LargeTransactionHandler();
@@ -159,15 +167,60 @@ public class TransactionService implements Subject {
                 to != null ? to.getAccountNumber() : null
         );
 
+        // Resolve the customer who should receive notifications for this request
+        String customerId =
+                (from != null) ? from.ownerId :
+                        (to != null)   ? to.ownerId : null;
+
+        // (1) ✅ NEW: notify submitted (real-time + DB)
+        if (customerId != null) {
+            notifyObservers(new NotificationEvent(
+                    NotificationEventType.TRANSACTION_SUBMITTED,
+                    "Transaction submitted (" + type + ", " + amount + ")",
+                    tx.getTransactionId(),
+                    Role.CUSTOMER,
+                    customerId
+            ));
+        }
+
+        // (2) ✅ NEW: large transaction alerts (customer + manager)
+        if (amount >= LARGE_TX_THRESHOLD) {
+            if (customerId != null) {
+                notifyObservers(new NotificationEvent(
+                        NotificationEventType.LARGE_TRANSACTION_ALERT,
+                        "Large transaction detected: " + amount + " (" + type + ")",
+                        tx.getTransactionId(),
+                        Role.CUSTOMER,
+                        customerId
+                ));
+            }
+
+            notifyObservers(new NotificationEvent(
+                    NotificationEventType.LARGE_TRANSACTION_ALERT,
+                    "Large transaction requires attention: " + amount + " (" + type + ") TxID=" + tx.getTransactionId(),
+                    tx.getTransactionId(),
+                    Role.MANAGER,
+                    resolveManagerId()
+            ));
+        }
+
+        // Approval chain (small/large/manager approval)
         approvalChain.handle(tx);
 
         if (tx.isApproved()) {
             // execute immediately
             try {
                 switch (type) {
-                    case "DEPOSIT" -> to.deposit(amount);
-                    case "WITHDRAW" -> from.withdraw(amount);
+                    case "DEPOSIT" -> {
+                        if (to == null) throw new IllegalStateException("Deposit target account is null.");
+                        to.deposit(amount);
+                    }
+                    case "WITHDRAW" -> {
+                        if (from == null) throw new IllegalStateException("Withdraw source account is null.");
+                        from.withdraw(amount);
+                    }
                     case "TRANSFER" -> {
+                        if (from == null || to == null) throw new IllegalStateException("Transfer accounts are null.");
                         from.withdraw(amount);
                         to.deposit(amount);
                     }
@@ -182,7 +235,7 @@ public class TransactionService implements Subject {
                 if (from != null) from.persist();
                 if (to != null) to.persist();
 
-                // customer notifications
+                // customer notifications (existing behavior, kept)
                 if ("DEPOSIT".equals(type) && to != null) {
                     notifyObservers(new NotificationEvent(
                             NotificationEventType.TRANSACTION_COMPLETED,
@@ -191,6 +244,7 @@ public class TransactionService implements Subject {
                             Role.CUSTOMER,
                             to.ownerId
                     ));
+
                 } else if ("WITHDRAW".equals(type) && from != null) {
                     notifyObservers(new NotificationEvent(
                             NotificationEventType.TRANSACTION_COMPLETED,
@@ -199,6 +253,7 @@ public class TransactionService implements Subject {
                             Role.CUSTOMER,
                             from.ownerId
                     ));
+
                 } else if ("TRANSFER".equals(type) && from != null && to != null) {
                     // sender
                     notifyObservers(new NotificationEvent(
@@ -218,14 +273,34 @@ public class TransactionService implements Subject {
                     ));
                 }
 
+                // (3) ✅ NEW: low balance warning (after successful withdraw/transfer)
+                if (from != null && ("WITHDRAW".equals(type) || "TRANSFER".equals(type))) {
+                    if (from.getBalance() <= LOW_BALANCE_THRESHOLD) {
+                        notifyObservers(new NotificationEvent(
+                                NotificationEventType.LOW_BALANCE_WARNING,
+                                "Low balance warning: " + from.getBalance() + " on account " + from.getAccountNumber(),
+                                tx.getTransactionId(),
+                                Role.CUSTOMER,
+                                from.ownerId
+                        ));
+                    }
+                }
+
             } catch (Exception e) {
                 tx.setStatus("FAILED: " + e.getMessage());
 
-                // best-effort notify customer if we can resolve
-                String customerId = null;
-                if (from != null) customerId = from.ownerId;
-                else if (to != null) customerId = to.ownerId;
+                // (4) ✅ NEW: validation failed event (business/validation cause)
+                if (customerId != null) {
+                    notifyObservers(new NotificationEvent(
+                            NotificationEventType.TRANSACTION_VALIDATION_FAILED,
+                            "Validation failed: " + e.getMessage(),
+                            tx.getTransactionId(),
+                            Role.CUSTOMER,
+                            customerId
+                    ));
+                }
 
+                // existing: notify failed
                 if (customerId != null) {
                     notifyObservers(new NotificationEvent(
                             NotificationEventType.TRANSACTION_FAILED,
@@ -249,6 +324,17 @@ public class TransactionService implements Subject {
                     Role.MANAGER,
                     managerId
             ));
+
+            // (optional) you can also notify the customer that it's pending
+            // if (customerId != null) {
+            //     notifyObservers(new NotificationEvent(
+            //             NotificationEventType.TRANSACTION_PENDING_MANAGER_APPROVAL,
+            //             "Your transaction is pending manager approval. TxID=" + tx.getTransactionId(),
+            //             tx.getTransactionId(),
+            //             Role.CUSTOMER,
+            //             customerId
+            //     ));
+            // }
         }
 
         // always save for audit + pending workflow
@@ -298,7 +384,7 @@ public class TransactionService implements Subject {
             if (to != null) to.persist();
 
             // 4) mark executed in DB (status + performedAt)
-            transactionDAO.markExecuted(transactionId, "COMPLETED"); // رح نضيفها بالـ DAO
+            transactionDAO.markExecuted(transactionId, "COMPLETED");
 
             // 5) notify customer
             if (customerId != null) {
@@ -311,9 +397,34 @@ public class TransactionService implements Subject {
                 ));
             }
 
+            // (6) ✅ NEW: low balance warning after execution too
+            if (from != null && ("WITHDRAW".equals(tx.getType()) || "TRANSFER".equals(tx.getType()))) {
+                if (from.getBalance() <= LOW_BALANCE_THRESHOLD) {
+                    notifyObservers(new NotificationEvent(
+                            NotificationEventType.LOW_BALANCE_WARNING,
+                            "Low balance warning: " + from.getBalance() + " on account " + from.getAccountNumber(),
+                            tx.getTransactionId(),
+                            Role.CUSTOMER,
+                            from.ownerId
+                    ));
+                }
+            }
+
         } catch (Exception e) {
             transactionDAO.markExecuted(transactionId, "FAILED: " + e.getMessage());
 
+            // ✅ NEW: validation failed
+            if (customerId != null) {
+                notifyObservers(new NotificationEvent(
+                        NotificationEventType.TRANSACTION_VALIDATION_FAILED,
+                        "Validation failed: " + e.getMessage(),
+                        tx.getTransactionId(),
+                        Role.CUSTOMER,
+                        customerId
+                ));
+            }
+
+            // existing failed
             if (customerId != null) {
                 notifyObservers(new NotificationEvent(
                         NotificationEventType.TRANSACTION_FAILED,
@@ -327,9 +438,6 @@ public class TransactionService implements Subject {
     }
 }
 
-
-
-//package com.bankingSystem.Transaction;
 //
 //import com.bankingSystem.Account.Account;
 //import com.bankingSystem.Database.TransactionDAO;

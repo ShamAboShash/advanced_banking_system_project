@@ -3,6 +3,8 @@ package com.bankingSystem.TransactionCore;
 import com.bankingSystem.Transaction.Transaction;
 import org.junit.jupiter.api.Test;
 
+import java.time.LocalDateTime;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 class TransactionTest {
@@ -33,5 +35,26 @@ class TransactionTest {
         assertTrue(tx.isApproved());
     }
 
+    @Test
+    void transaction_basicConstructorAndGetters_shouldWork() {
+        Transaction tx = new Transaction(
+                "tx-1",
+                "DEPOSIT",
+                100,
+                LocalDateTime.now(),
+                null,
+                "ACC-1",
+                "COMPLETED",
+                "test",
+                "user1",
+                LocalDateTime.now()
+        );
+
+        assertEquals("tx-1", tx.getTransactionId());
+        assertEquals("DEPOSIT", tx.getType());
+        assertEquals(100, tx.getAmount());
+        assertEquals("ACC-1", tx.getToAccount());
+        assertEquals("COMPLETED", tx.getStatus());
+    }
 
 }

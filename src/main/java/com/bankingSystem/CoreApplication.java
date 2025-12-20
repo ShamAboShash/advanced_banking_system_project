@@ -52,13 +52,17 @@ public class CoreApplication {
 
     // ====== Notification session start/stop ======
     private static void startNotificationSession(User user) {
-        TransactionService txService = TransactionService.getInstance();
+
+        // ✅ CHANGE: use NotificationCenter as the single Subject for all subsystems
+        NotificationCenter center = NotificationCenter.getInstance();
 
         // Register observers for THIS logged-in user only
         sessionInApp = new InAppNotifier(user.getUserId(), user.getRole());
         sessionSms   = new SMSNotifier(user.getUserId(), user.getRole());
-        txService.registerObserver(sessionInApp);
-        txService.registerObserver(sessionSms);
+
+        // ✅ CHANGE: register on center (not TransactionService)
+        center.registerObserver(sessionInApp);
+        center.registerObserver(sessionSms);
 
         // Start real-time listener thread for THIS user
         sessionListener = new NotificationRealtimeListener(user.getUserId());
@@ -74,13 +78,15 @@ public class CoreApplication {
     }
 
     private static void stopNotificationSession() {
-        TransactionService txService = TransactionService.getInstance();
+
+        // ✅ CHANGE: remove observers from NotificationCenter
+        NotificationCenter center = NotificationCenter.getInstance();
 
         if (sessionListener != null) sessionListener.stop();
         if (sessionListenerThread != null) sessionListenerThread.interrupt();
 
-        if (sessionInApp != null) txService.removeObserver(sessionInApp);
-        if (sessionSms != null) txService.removeObserver(sessionSms);
+        if (sessionInApp != null) center.removeObserver(sessionInApp);
+        if (sessionSms != null) center.removeObserver(sessionSms);
 
         sessionListener = null;
         sessionListenerThread = null;
@@ -97,8 +103,8 @@ public class CoreApplication {
                     + Colors.RESET);
         }
 
-        // ✅ one global observer to persist ALL notifications in DB
-        TransactionService.getInstance().registerObserver(new NotificationPersistenceObserver());
+        // ✅ CHANGE: one global observer to persist ALL notifications in DB (from any subsystem)
+        NotificationCenter.getInstance().registerObserver(new NotificationPersistenceObserver());
 
         while (true) {
             System.out.println("1. Customer");
@@ -236,7 +242,6 @@ public class CoreApplication {
     // ==================== MANAGER APPROVE/REJECT FLOW ====================
     private static void managerApproveRejectFlow(User manager) {
         List<Transaction> pending = transactionDAO.loadPendingTransactions();
-
 
         printHeader("PENDING TRANSACTIONS (" + pending.size() + ")");
         if (pending.isEmpty()) {

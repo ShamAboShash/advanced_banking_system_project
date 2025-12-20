@@ -102,4 +102,15 @@ class NotificationDAOIntegrationTest {
         List<NotificationRecord> unreadAfter = dao.loadUnread("u3");
         assertEquals(0, unreadAfter.size(), "After markRead, it should not appear in unread list");
     }
+
+    @Test
+    void markDelivered_emptyList_shouldDoNothing() {
+        assertDoesNotThrow(() -> dao.markDelivered(List.of()));
+    }
+
+    @Test
+    void printNotificationsForUser_noNotifications_shouldNotThrow() {
+        assertDoesNotThrow(() -> dao.printNotificationsForUser("no-user"));
+    }
+
 }
