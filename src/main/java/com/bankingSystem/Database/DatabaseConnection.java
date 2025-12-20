@@ -67,6 +67,20 @@ public class DatabaseConnection {
                 "performedAt TIMESTAMP" +
                 ")";
 
+        String createNotifications = "CREATE TABLE IF NOT EXISTS Notifications (" +
+                "id VARCHAR(255) PRIMARY KEY, " +
+                "userId VARCHAR(255), " +
+                "role VARCHAR(50), " +
+                "type VARCHAR(80), " +
+                "message VARCHAR(500), " +
+                "transactionId VARCHAR(255), " +
+                "createdAt TIMESTAMP, " +
+                "delivered BOOLEAN DEFAULT FALSE, " +   // for real-time push in console
+                "readFlag BOOLEAN DEFAULT FALSE" +      // for menu view/read
+                ")";
+
+        connection.createStatement().execute(createNotifications);
+
         connection.createStatement().execute(createUsers);
         connection.createStatement().execute(createAccounts);
         connection.createStatement().execute(createTransactions);

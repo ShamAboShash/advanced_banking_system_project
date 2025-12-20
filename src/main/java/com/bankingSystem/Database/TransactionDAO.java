@@ -13,15 +13,17 @@ public class TransactionDAO {
     private final Connection conn = DatabaseConnection.getInstance().getConnection();
 
     /**
-     * Save a transaction with performer and exact execution time
+     * Save a transaction with performer and exact execution time.
+     * NOTE: This is INSERT only. If you call it twice with same txId you will get PK violation.
      */
     public void saveTransaction(Transaction tx) {
         String sql = """
-            INSERT INTO Transactions 
-            (transactionId, type, amount, timestamp, fromAccount, toAccount, 
-             status, description, performedBy, performedAt) 
+            INSERT INTO Transactions
+            (transactionId, type, amount, timestamp, fromAccount, toAccount,
+             status, description, performedBy, performedAt)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """;
+
         try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setString(1, tx.getTransactionId());
             pstmt.setString(2, tx.getType());
@@ -31,8 +33,8 @@ public class TransactionDAO {
             pstmt.setString(6, tx.getToAccount());
             pstmt.setString(7, tx.getStatus());
             pstmt.setString(8, tx.getDescription());
-            pstmt.setString(9, tx.getPerformedBy());     // ← NEW: who did it
-            pstmt.setObject(10, tx.getPerformedAt());    // ← NEW: when exactly
+            pstmt.setString(9, tx.getPerformedBy());           // who requested/performed
+            pstmt.setObject(10, tx.getPerformedAt());          // may be null (pending)
             pstmt.executeUpdate();
         } catch (SQLException e) {
             System.err.println("Error saving transaction: " + e.getMessage());
@@ -41,11 +43,15 @@ public class TransactionDAO {
     }
 
     public List<Transaction> loadTransactions(String accountNumber) {
+        if (accountNumber == null || accountNumber.isBlank()) {
+            return new ArrayList<>();
+        }
+
         List<Transaction> transactions = new ArrayList<>();
         String sql = """
-            SELECT * FROM Transactions 
+            SELECT * FROM Transactions
             WHERE fromAccount = ? OR toAccount = ?
-            ORDER BY performedAt DESC
+            ORDER BY COALESCE(performedAt, timestamp) DESC
             """;
 
         try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
@@ -67,13 +73,18 @@ public class TransactionDAO {
 
     public List<Transaction> loadAllTransactions() {
         List<Transaction> transactions = new ArrayList<>();
-        String sql = "SELECT * FROM Transactions ORDER BY performedAt DESC";
+        String sql = """
+            SELECT * FROM Transactions
+            ORDER BY COALESCE(performedAt, timestamp) DESC
+            """;
 
         try (Statement stmt = conn.createStatement();
              ResultSet rs = stmt.executeQuery(sql)) {
+
             while (rs.next()) {
                 transactions.add(buildTransactionFromResultSet(rs));
             }
+
         } catch (SQLException e) {
             System.err.println("Error loading all transactions");
             e.printStackTrace();
@@ -84,13 +95,19 @@ public class TransactionDAO {
 
     public List<Transaction> loadPendingTransactions() {
         List<Transaction> pending = new ArrayList<>();
-        String sql = "SELECT * FROM Transactions WHERE status = 'PENDING_MANAGER_APPROVAL'";
+        String sql = """
+            SELECT * FROM Transactions
+            WHERE status = 'PENDING_MANAGER_APPROVAL'
+            ORDER BY COALESCE(performedAt, timestamp) DESC
+            """;
 
         try (Statement stmt = conn.createStatement();
              ResultSet rs = stmt.executeQuery(sql)) {
+
             while (rs.next()) {
                 pending.add(buildTransactionFromResultSet(rs));
             }
+
         } catch (SQLException e) {
             e.printStackTrace();
         }
@@ -125,23 +142,24 @@ public class TransactionDAO {
         return null;
     }
 
-    // ============ NEW: Manager Reports ============
+    // ============ Manager Reports ============
 
-    /**
-     * Get all transactions for a specific account on today's date
-     */
     public List<Transaction> getDailyTransactionsForAccount(String accountNumber) {
+        if (accountNumber == null || accountNumber.isBlank()) return new ArrayList<>();
+
         List<Transaction> transactions = new ArrayList<>();
+
         String sql = """
-            SELECT * FROM Transactions 
-            WHERE (fromAccount = ? OR toAccount = ?) 
-            AND DATE(performedAt) = CURRENT_DATE
-            ORDER BY performedAt DESC
-            """;
+        SELECT * FROM Transactions
+        WHERE (fromAccount = ? OR toAccount = ?)
+          AND CAST(COALESCE(performedAt, timestamp) AS DATE) = CURRENT_DATE
+        ORDER BY COALESCE(performedAt, timestamp) DESC
+        """;
 
         try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setString(1, accountNumber);
             pstmt.setString(2, accountNumber);
+
             try (ResultSet rs = pstmt.executeQuery()) {
                 while (rs.next()) {
                     transactions.add(buildTransactionFromResultSet(rs));
@@ -153,21 +171,25 @@ public class TransactionDAO {
         return transactions;
     }
 
-    /**
-     * Get all transactions for a specific account in the last 7 days
-     */
     public List<Transaction> getWeeklyTransactionsForAccount(String accountNumber) {
+        if (accountNumber == null || accountNumber.isBlank()) return new ArrayList<>();
+
         List<Transaction> transactions = new ArrayList<>();
+
+        // ✅ H2 syntax (not MySQL):
+        // last 7 days including today:
+        // DATEADD('DAY', -7, CURRENT_DATE)
         String sql = """
-            SELECT * FROM Transactions 
-            WHERE (fromAccount = ? OR toAccount = ?) 
-            AND performedAt >= DATE_SUB(CURRENT_DATE, INTERVAL 7 DAY)
-            ORDER BY performedAt DESC
+            SELECT * FROM Transactions
+            WHERE (fromAccount = ? OR toAccount = ?)
+              AND COALESCE(performedAt, timestamp) >= DATEADD('DAY', -7, CURRENT_DATE)
+            ORDER BY COALESCE(performedAt, timestamp) DESC
             """;
 
         try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
             pstmt.setString(1, accountNumber);
             pstmt.setString(2, accountNumber);
+
             try (ResultSet rs = pstmt.executeQuery()) {
                 while (rs.next()) {
                     transactions.add(buildTransactionFromResultSet(rs));
@@ -178,29 +200,6 @@ public class TransactionDAO {
         }
         return transactions;
     }
-
-    /**
-     * Get all accounts that have transactions today (for manager report summary)
-     */
-//    public List<String> getAccountsWithTransactionsToday() {
-//        List<String> accounts = new ArrayList<>();
-//        String sql = """
-//            SELECT DISTINCT fromAccount AS acc FROM Transactions WHERE DATE(performedAt) = CURRENT_DATE
-//            UNION
-//            SELECT DISTINCT toAccount AS acc FROM Transactions WHERE DATE(performedAt) = CURRENT_DATE
-//            """;
-//
-//        try (Statement stmt = conn.createStatement();
-//             ResultSet rs = stmt.executeQuery(sql)) {
-//            while (rs.next()) {
-//                String acc = rs.getString("acc");
-//                if (acc != null) accounts.add(acc);
-//            }
-//        } catch (SQLException e) {
-//            e.printStackTrace();
-//        }
-//        return accounts;
-//    }
 
     // Helper to build Transaction with new fields
     private Transaction buildTransactionFromResultSet(ResultSet rs) throws SQLException {
@@ -218,13 +217,47 @@ public class TransactionDAO {
         );
     }
 
-    // Add these to TransactionDAO.java
     public List<String> getAccountsWithTransactionsToday() {
-        // Simplified version using loadAllTransactions + filter
         List<String> accounts = new ArrayList<>();
+
+        String sql = """
+    SELECT DISTINCT acc FROM (
+        SELECT fromAccount AS acc
+        FROM Transactions
+        WHERE fromAccount IS NOT NULL
+          AND CAST(COALESCE(performedAt, timestamp) AS DATE) = CURRENT_DATE
+
+        UNION
+
+        SELECT toAccount AS acc
+        FROM Transactions
+        WHERE toAccount IS NOT NULL
+          AND CAST(COALESCE(performedAt, timestamp) AS DATE) = CURRENT_DATE
+    )
+    """;
+
+        try (Statement stmt = conn.createStatement();
+             ResultSet rs = stmt.executeQuery(sql)) {
+
+            while (rs.next()) accounts.add(rs.getString("acc"));
+
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+
+        return accounts;
+    }
+
+    public List<String> getAccountsWithTransactionsInWeek() {
+        List<String> accounts = new ArrayList<>();
+        LocalDate weekAgo = LocalDate.now().minusDays(7);
+
         for (Transaction tx : loadAllTransactions()) {
-            LocalDate txDate = tx.getPerformedAt().toLocalDate();
-            if (txDate.equals(LocalDate.now())) {
+            LocalDateTime t = (tx.getPerformedAt() != null) ? tx.getPerformedAt() : tx.getTimestamp();
+            if (t == null) continue;
+
+            LocalDate txDate = t.toLocalDate();
+            if (!txDate.isBefore(weekAgo)) {
                 if (tx.getFromAccount() != null) accounts.add(tx.getFromAccount());
                 if (tx.getToAccount() != null) accounts.add(tx.getToAccount());
             }
@@ -232,16 +265,22 @@ public class TransactionDAO {
         return accounts.stream().distinct().toList();
     }
 
-    public List<String> getAccountsWithTransactionsInWeek() {
-        List<String> accounts = new ArrayList<>();
-        LocalDate weekAgo = LocalDate.now().minusDays(7);
-        for (Transaction tx : loadAllTransactions()) {
-            LocalDate txDate = tx.getPerformedAt().toLocalDate();
-            if (!txDate.isBefore(weekAgo)) {
-                if (tx.getFromAccount() != null) accounts.add(tx.getFromAccount());
-                if (tx.getToAccount() != null) accounts.add(tx.getToAccount());
-            }
+    /**
+     * Mark a transaction as executed (sets performedAt).
+     * Useful when manager approves then we execute later.
+     */
+    public void markExecuted(String transactionId, String newStatus) {
+        String sql = """
+            UPDATE Transactions
+            SET status = ?, performedAt = CURRENT_TIMESTAMP
+            WHERE transactionId = ?
+            """;
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, newStatus);
+            ps.setString(2, transactionId);
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            throw new RuntimeException("Error updating execution info", e);
         }
-        return accounts.stream().distinct().toList();
     }
 }
