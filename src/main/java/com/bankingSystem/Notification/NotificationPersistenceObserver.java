@@ -3,7 +3,18 @@ package com.bankingSystem.Notification;
 import com.bankingSystem.Database.NotificationDAO;
 
 public class NotificationPersistenceObserver implements Observer {
-    private final NotificationDAO dao = new NotificationDAO();
+
+    private final NotificationDAO dao;
+
+    // ✅ Constructor افتراضي للاستخدام الحقيقي (runtime)
+    public NotificationPersistenceObserver() {
+        this(new NotificationDAO());
+    }
+
+    // ✅ Constructor للاختبارات (inject mock)
+    public NotificationPersistenceObserver(NotificationDAO dao) {
+        this.dao = dao;
+    }
 
     @Override
     public boolean supports(NotificationEvent event) {
@@ -21,6 +32,7 @@ public class NotificationPersistenceObserver implements Observer {
         rec.createdAt = event.getTimestamp();
         rec.delivered = false;
         rec.readFlag = false;
+
         dao.save(rec);
     }
 }

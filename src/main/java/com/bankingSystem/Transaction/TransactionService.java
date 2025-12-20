@@ -16,8 +16,8 @@ public class TransactionService implements Subject {
     public static TransactionService getInstance() { return INSTANCE; }
 
     private ApprovalHandler approvalChain;
-    private final TransactionDAO transactionDAO = new TransactionDAO();
-    private final AccountDAO accountDAO = new AccountDAO();
+    private TransactionDAO transactionDAO = new TransactionDAO();
+    private AccountDAO accountDAO = new AccountDAO();
     private final UserDAO userDAO = new UserDAO();
 
     // ✅ Use centralized NotificationCenter (recommended)
@@ -26,7 +26,10 @@ public class TransactionService implements Subject {
     private TransactionService() {
         buildApprovalChain();
     }
-
+    public void setDaosForTests(TransactionDAO txDao, AccountDAO accDao) {
+        this.transactionDAO = txDao;
+        this.accountDAO = accDao;
+    }
     private void buildApprovalChain() {
         ApprovalHandler small = new SmallTransactionHandler();
         ApprovalHandler large = new LargeTransactionHandler();

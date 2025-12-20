@@ -38,6 +38,8 @@ public abstract class User {
         return BCrypt.checkpw(plainPassword, this.passwordHash);
     }
 
+
+
     // Getters
     public String getUserId() { return userId; }
     public String getUsername() { return username; }
@@ -55,4 +57,6 @@ public abstract class User {
         return String.format("%s [ID: %s, User: %s, Phone: %s, Role: %s]",
                 getClass().getSimpleName(), userId, username, phoneNumber, role.getDisplayName());
     }
+
+
 }

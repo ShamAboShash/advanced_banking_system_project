@@ -8,11 +8,21 @@ import com.bankingSystem.Transaction.Transaction;
 import java.util.List;
 
 public class RoleBasedAccessProxy implements BankingService {
-    private final BankingServiceImpl realService = new BankingServiceImpl();
+    //private final BankingServiceImpl realService = new BankingServiceImpl();
+    private final BankingService realService;
+
     private final User currentUser;
 
+    //public RoleBasedAccessProxy(User currentUser) {
+      //  this.currentUser = currentUser;
+    //}
     public RoleBasedAccessProxy(User currentUser) {
+        this(currentUser, new BankingServiceImpl());
+    }
+
+    public RoleBasedAccessProxy(User currentUser, BankingService realService) {
         this.currentUser = currentUser;
+        this.realService = realService;
     }
 
     private void requireRole(Role requiredRole) {

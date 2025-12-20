@@ -82,6 +82,21 @@
                 <groupId>org.jacoco</groupId>
                 <artifactId>jacoco-maven-plugin</artifactId>
                 <version>${jacoco.version}</version>
+
+                <configuration>
+                    <excludes>
+                        <!-- Console / Main -->
+                        <exclude>**/CoreApplication*</exclude>
+                        <exclude>**/Bank*</exclude>
+
+                        <!-- Performance benchmarks -->
+                        <exclude>**/Performance/**</exclude>
+
+                        <!-- Utility helpers -->
+                        <exclude>**/Util/**</exclude>
+                    </excludes>
+                </configuration>
+
                 <executions>
                     <execution>
                         <goals>
@@ -97,6 +112,7 @@
                     </execution>
                 </executions>
             </plugin>
+
         </plugins>
     </build>
 </project>
